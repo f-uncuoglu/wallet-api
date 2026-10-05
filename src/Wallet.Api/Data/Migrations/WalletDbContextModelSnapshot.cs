@@ -128,6 +128,11 @@ namespace Wallet.Api.Data.Migrations
                     b.Property<Guid>("FromAccountId")
                         .HasColumnType("uuid");
 
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
                     b.Property<Guid>("InitiatedByUserId")
                         .HasColumnType("uuid");
 
@@ -138,9 +143,10 @@ namespace Wallet.Api.Data.Migrations
 
                     b.HasIndex("FromAccountId");
 
-                    b.HasIndex("InitiatedByUserId");
-
                     b.HasIndex("ToAccountId");
+
+                    b.HasIndex("InitiatedByUserId", "IdempotencyKey")
+                        .IsUnique();
 
                     b.ToTable("Transfers", t =>
                         {

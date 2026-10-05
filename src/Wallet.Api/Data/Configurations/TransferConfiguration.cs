@@ -20,6 +20,7 @@ public class TransferConfiguration : IEntityTypeConfiguration<Transfer>
         builder.Property(t => t.Amount).HasPrecision(18, 2);
         builder.Property(t => t.Currency).HasConversion<string>().HasMaxLength(3);
         builder.Property(t => t.Description).HasMaxLength(200);
+        builder.Property(t => t.IdempotencyKey).IsRequired().HasMaxLength(100);
 
         builder.HasOne<Account>()
             .WithMany()
@@ -35,5 +36,9 @@ public class TransferConfiguration : IEntityTypeConfiguration<Transfer>
             .WithMany()
             .HasForeignKey(t => t.InitiatedByUserId)
             .OnDelete(DeleteBehavior.Restrict);
+
+        // The database, not the application, guarantees that a key is used at most once per user.
+        // Two concurrent requests with the same key cannot both commit.
+        builder.HasIndex(t => new { t.InitiatedByUserId, t.IdempotencyKey }).IsUnique();
     }
 }

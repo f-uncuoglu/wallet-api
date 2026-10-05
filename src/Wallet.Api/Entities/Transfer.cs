@@ -16,5 +16,11 @@ public class Transfer
 
     public Guid InitiatedByUserId { get; set; }
 
+    /// <summary>
+    /// Client-generated key that identifies one logical transfer. Unique per user,
+    /// so a retried request can never move the money twice.
+    /// </summary>
+    public required string IdempotencyKey { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; }
 }

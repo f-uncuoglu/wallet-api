@@ -8,14 +8,31 @@ namespace Wallet.Api.Services;
 
 public sealed class TransferService(WalletDbContext db, TimeProvider timeProvider) : ITransferService
 {
-    public async Task<TransferResponse> CreateAsync(Guid userId, CreateTransferRequest request, CancellationToken cancellationToken)
+    public async Task<TransferResult> CreateAsync(
+        Guid userId,
+        CreateTransferRequest request,
+        string idempotencyKey,
+        CancellationToken cancellationToken)
     {
-        var transfer = await ConcurrencyRetry.ExecuteAsync(
-            db,
-            () => ExecuteAsync(userId, request, cancellationToken),
-            cancellationToken);
+        try
+        {
+            return await ConcurrencyRetry.ExecuteAsync(
+                db,
+                () => ExecuteAsync(userId, request, idempotencyKey, cancellationToken),
+                cancellationToken);
+        }
+        catch (DbUpdateException exception) when (exception.IsUniqueViolation())
+        {
+            // A concurrent request with the same key committed after our lookup but before our
+            // INSERT. The unique index rejected ours and the whole transaction rolled back, so
+            // the balances were only changed once. Return the winner's result.
+            db.ChangeTracker.Clear();
 
-        return TransferResponse.From(transfer);
+            var existing = await FindByIdempotencyKeyAsync(userId, idempotencyKey, cancellationToken)
+                ?? throw new ConflictException("The transfer could not be completed. Please try again.");
+
+            return Replay(existing, request);
+        }
     }
 
     public async Task<TransferResponse> GetByIdAsync(Guid userId, Guid transferId, CancellationToken cancellationToken)
@@ -33,11 +50,25 @@ public sealed class TransferService(WalletDbContext db, TimeProvider timeProvide
             : TransferResponse.From(transfer);
     }
 
-    private async Task<Transfer> ExecuteAsync(Guid userId, CreateTransferRequest request, CancellationToken cancellationToken)
+    private async Task<TransferResult> ExecuteAsync(
+        Guid userId,
+        CreateTransferRequest request,
+        string idempotencyKey,
+        CancellationToken cancellationToken)
     {
         var accounts = await db.Accounts
             .Where(a => a.Id == request.FromAccountId || a.Id == request.ToAccountId)
             .ToListAsync(cancellationToken);
+
+        // Has this key been processed already? Then return the original result and move no money.
+        // The lookup deliberately comes AFTER reading the accounts: if the first request commits
+        // later than this point, it also changes the row versions read above, so our own
+        // SaveChanges fails and the retry lands here again - this time finding the transfer.
+        var existing = await FindByIdempotencyKeyAsync(userId, idempotencyKey, cancellationToken);
+        if (existing is not null)
+        {
+            return Replay(existing, request);
+        }
 
         // The source must belong to the caller; the destination can be anybody's account.
         var source = accounts.SingleOrDefault(a => a.Id == request.FromAccountId && a.UserId == userId)
@@ -72,6 +103,7 @@ public sealed class TransferService(WalletDbContext db, TimeProvider timeProvide
             Currency = source.Currency,
             Description = description,
             InitiatedByUserId = userId,
+            IdempotencyKey = idempotencyKey,
             CreatedAt = now
         };
         db.Transfers.Add(transfer);
@@ -105,6 +137,25 @@ public sealed class TransferService(WalletDbContext db, TimeProvider timeProvide
         // back and DbUpdateConcurrencyException triggers a retry (see ConcurrencyRetry).
         await db.SaveChangesAsync(cancellationToken);
 
-        return transfer;
+        return new TransferResult(TransferResponse.From(transfer), Replayed: false);
+    }
+
+    private Task<Transfer?> FindByIdempotencyKeyAsync(Guid userId, string idempotencyKey, CancellationToken cancellationToken) =>
+        db.Transfers
+            .AsNoTracking()
+            .SingleOrDefaultAsync(
+                t => t.InitiatedByUserId == userId && t.IdempotencyKey == idempotencyKey,
+                cancellationToken);
+
+    private static TransferResult Replay(Transfer existing, CreateTransferRequest request)
+    {
+        // The same key with a different payload is a client bug, not a retry.
+        var sameRequest = existing.FromAccountId == request.FromAccountId
+            && existing.ToAccountId == request.ToAccountId
+            && existing.Amount == request.Amount;
+
+        return sameRequest
+            ? new TransferResult(TransferResponse.From(existing), Replayed: true)
+            : throw new ConflictException("This Idempotency-Key was already used for a different transfer.");
     }
 }

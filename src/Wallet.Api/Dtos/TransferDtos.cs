@@ -22,3 +22,7 @@ public record TransferResponse(
             transfer.Description,
             transfer.CreatedAt);
 }
+
+/// <param name="Transfer">The transfer that was executed.</param>
+/// <param name="Replayed">True when the idempotency key had been seen before and no money moved this time.</param>
+public record TransferResult(TransferResponse Transfer, bool Replayed);
