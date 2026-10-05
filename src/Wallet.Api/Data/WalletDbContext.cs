@@ -7,6 +7,8 @@ public class WalletDbContext(DbContextOptions<WalletDbContext> options) : DbCont
 {
     public DbSet<User> Users => Set<User>();
 
+    public DbSet<Account> Accounts => Set<Account>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         // Picks up every IEntityTypeConfiguration<T> in Data/Configurations.
