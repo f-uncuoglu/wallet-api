@@ -104,6 +104,52 @@ namespace Wallet.Api.Data.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Wallet.Api.Entities.Transfer", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<Guid>("FromAccountId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("InitiatedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ToAccountId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FromAccountId");
+
+                    b.HasIndex("InitiatedByUserId");
+
+                    b.HasIndex("ToAccountId");
+
+                    b.ToTable("Transfers", t =>
+                        {
+                            t.HasCheckConstraint("CK_Transfers_Amount_Positive", "\"Amount\" > 0");
+
+                            t.HasCheckConstraint("CK_Transfers_DifferentAccounts", "\"FromAccountId\" <> \"ToAccountId\"");
+                        });
+                });
+
             modelBuilder.Entity("Wallet.Api.Entities.User", b =>
                 {
                     b.Property<Guid>("Id")
@@ -159,6 +205,27 @@ namespace Wallet.Api.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Account");
+                });
+
+            modelBuilder.Entity("Wallet.Api.Entities.Transfer", b =>
+                {
+                    b.HasOne("Wallet.Api.Entities.Account", null)
+                        .WithMany()
+                        .HasForeignKey("FromAccountId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Wallet.Api.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("InitiatedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Wallet.Api.Entities.Account", null)
+                        .WithMany()
+                        .HasForeignKey("ToAccountId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 #pragma warning restore 612, 618
         }

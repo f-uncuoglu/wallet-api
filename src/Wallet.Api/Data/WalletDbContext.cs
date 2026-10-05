@@ -11,6 +11,8 @@ public class WalletDbContext(DbContextOptions<WalletDbContext> options) : DbCont
 
     public DbSet<AccountTransaction> Transactions => Set<AccountTransaction>();
 
+    public DbSet<Transfer> Transfers => Set<Transfer>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         // Picks up every IEntityTypeConfiguration<T> in Data/Configurations.
