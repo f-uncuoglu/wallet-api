@@ -1,0 +1,125 @@
+# Example requests for the Wallet API.
+# Works with the REST Client extension (VS Code), Rider and Visual Studio.
+# Run them top to bottom: later requests reuse values from earlier responses.
+
+@baseUrl = http://localhost:5080
+
+### Health check
+GET {{baseUrl}}/health
+
+### Register
+POST {{baseUrl}}/api/auth/register
+Content-Type: application/json
+
+{
+  "email": "ada@example.com",
+  "password": "Passw0rd!",
+  "fullName": "Ada Lovelace"
+}
+
+### Login
+# @name login
+POST {{baseUrl}}/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "ada@example.com",
+  "password": "Passw0rd!"
+}
+
+###
+@token = {{login.response.body.accessToken}}
+
+### Open the first account
+# @name main
+POST {{baseUrl}}/api/accounts
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "Main",
+  "currency": "TRY"
+}
+
+### Open a second account
+# @name savings
+POST {{baseUrl}}/api/accounts
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "Savings",
+  "currency": "TRY"
+}
+
+###
+@mainId = {{main.response.body.id}}
+@savingsId = {{savings.response.body.id}}
+
+### Deposit
+POST {{baseUrl}}/api/accounts/{{mainId}}/deposits
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "amount": 1000.00,
+  "description": "Salary"
+}
+
+### Withdraw
+POST {{baseUrl}}/api/accounts/{{mainId}}/withdrawals
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "amount": 150.50,
+  "description": "ATM"
+}
+
+### Transfer (send it twice: the second response is 200 with "Idempotent-Replayed: true")
+POST {{baseUrl}}/api/transfers
+Authorization: Bearer {{token}}
+Idempotency-Key: 7d1c6f0e-2b0a-4c3e-9a55-1f2e3d4c5b6a
+Content-Type: application/json
+
+{
+  "fromAccountId": "{{mainId}}",
+  "toAccountId": "{{savingsId}}",
+  "amount": 250.00,
+  "description": "Monthly savings"
+}
+
+### Accounts with their balances
+GET {{baseUrl}}/api/accounts
+Authorization: Bearer {{token}}
+
+### Transaction history: page 1, newest first
+GET {{baseUrl}}/api/accounts/{{mainId}}/transactions?page=1&pageSize=10
+Authorization: Bearer {{token}}
+
+### Transaction history: only outgoing transfers
+GET {{baseUrl}}/api/accounts/{{mainId}}/transactions?type=TransferOut
+Authorization: Bearer {{token}}
+
+### Withdraw more than the balance -> 422 ProblemDetails
+POST {{baseUrl}}/api/accounts/{{savingsId}}/withdrawals
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "amount": 999999
+}
+
+### Admin: log in with the seeded development admin
+# @name adminLogin
+POST {{baseUrl}}/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@wallet.local",
+  "password": "Admin123!"
+}
+
+### Admin: all accounts of all users (403 with a regular user's token)
+GET {{baseUrl}}/api/admin/accounts
+Authorization: Bearer {{adminLogin.response.body.accessToken}}
