@@ -38,4 +38,25 @@ public class AccountsController(IAccountService accountService) : ControllerBase
     {
         return await accountService.GetByIdAsync(User.GetUserId(), id, cancellationToken);
     }
+
+    /// <summary>Adds money to the account and records it in the ledger.</summary>
+    [HttpPost("{id:guid}/deposits")]
+    [ProducesResponseType<TransactionResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<TransactionResponse>> Deposit(Guid id, DepositRequest request, CancellationToken cancellationToken)
+    {
+        return await accountService.DepositAsync(User.GetUserId(), id, request, cancellationToken);
+    }
+
+    /// <summary>Takes money out of the account. Fails with 422 when the balance is too low.</summary>
+    [HttpPost("{id:guid}/withdrawals")]
+    [ProducesResponseType<TransactionResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status422UnprocessableEntity)]
+    public async Task<ActionResult<TransactionResponse>> Withdraw(Guid id, WithdrawRequest request, CancellationToken cancellationToken)
+    {
+        return await accountService.WithdrawAsync(User.GetUserId(), id, request, cancellationToken);
+    }
 }

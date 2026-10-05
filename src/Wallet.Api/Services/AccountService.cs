@@ -47,4 +47,55 @@ public sealed class AccountService(WalletDbContext db, TimeProvider timeProvider
             ? throw NotFoundException.For("Account", accountId)
             : AccountResponse.From(account);
     }
+
+    public Task<TransactionResponse> DepositAsync(Guid userId, Guid accountId, DepositRequest request, CancellationToken cancellationToken) =>
+        ApplyAsync(userId, accountId, TransactionType.Deposit, request.Amount, request.Description, cancellationToken);
+
+    public Task<TransactionResponse> WithdrawAsync(Guid userId, Guid accountId, WithdrawRequest request, CancellationToken cancellationToken) =>
+        ApplyAsync(userId, accountId, TransactionType.Withdrawal, request.Amount, request.Description, cancellationToken);
+
+    private Task<TransactionResponse> ApplyAsync(
+        Guid userId,
+        Guid accountId,
+        TransactionType type,
+        decimal amount,
+        string? description,
+        CancellationToken cancellationToken)
+    {
+        // Read-modify-write on the balance. If another request changed the same account in
+        // between, SaveChanges throws DbUpdateConcurrencyException and the whole block is
+        // re-run against the fresh row instead of overwriting the other update.
+        return ConcurrencyRetry.ExecuteAsync(db, async () =>
+        {
+            var account = await db.Accounts
+                .SingleOrDefaultAsync(a => a.Id == accountId && a.UserId == userId, cancellationToken)
+                ?? throw NotFoundException.For("Account", accountId);
+
+            if (type == TransactionType.Deposit)
+            {
+                account.Deposit(amount);
+            }
+            else
+            {
+                account.Withdraw(amount);
+            }
+
+            var transaction = new AccountTransaction
+            {
+                AccountId = account.Id,
+                Type = type,
+                Amount = amount,
+                BalanceAfter = account.Balance,
+                Description = description?.Trim(),
+                CreatedAt = timeProvider.GetUtcNow()
+            };
+            db.Transactions.Add(transaction);
+
+            // One SaveChanges = one database transaction: the balance update and the
+            // ledger row are committed together or not at all.
+            await db.SaveChangesAsync(cancellationToken);
+
+            return TransactionResponse.From(transaction);
+        }, cancellationToken);
+    }
 }
